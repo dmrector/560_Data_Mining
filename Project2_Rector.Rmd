@@ -1,0 +1,163 @@
+---
+title: "Project 2"
+author: "Dakotah Rector"
+date: "3/14/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library,}
+library(e1071)
+library(klaR)
+library(nnet)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(mlbench)
+library(VIM)
+library(tidyverse)
+library(caret)
+```
+
+Load the Data & remove the ID column
+```{r}
+data("BreastCancer")
+# remove the Id column
+BreastCancer$Id <- NULL 
+BreastCancer <- na.omit(BreastCancer)
+BC.df <- BreastCancer
+summary(BC.df)
+```
+
+```{r}
+# many of these columns need to be converted into numeric
+str(BC.df)
+BC.df$Cl.thickness<-as.numeric(BC.df$Cl.thickness)
+BC.df$Mitoses<-as.numeric(BC.df$Mitoses)
+BC.df$Cell.size<-as.numeric(BC.df$Cell.size)
+BC.df$Cell.shape<-as.numeric(BC.df$Cell.shape)
+BC.df$Marg.adhesion<-as.numeric(BC.df$Marg.adhesion)
+BC.df$Epith.c.size<-as.numeric(BC.df$Epith.c.size)
+BC.df$Bare.nuclei<-as.numeric(BC.df$Bare.nuclei)
+BC.df$Bl.cromatin<-as.numeric(BC.df$Bl.cromatin)
+BC.df$Normal.nucleoli<-as.numeric(BC.df$Normal.nucleoli)
+
+# convert Class to malignant = 1 and benign = 0
+BC.df$Class <-ifelse(BC.df$Class =="malignant",1,0)
+BC.df$Class <- as.factor(BC.df$Class)
+
+str(BC.df)
+View(BC.df)
+```
+
+Support vector machine
+
+```{r }
+BC.svm <- svm(Class ~ ., BC.df)
+BC.svm.pred <- predict(BC.svm, BC.df)
+table(BC.svm.pred, BC.df$Class)
+```
+
+
+Naive Bayes classifier
+
+```{r }
+BC.nb <- NaiveBayes(Class ~ ., BC.df)
+BC.nb.pred <- predict(BC.nb,BC.df)
+table(BC.nb.pred$class,BC.df$Class)
+```
+
+
+Neural Network
+
+```{r }
+#set.seed(1)
+BC.nnet <- nnet(Class ~ ., BC.df, size=1)
+BC.nnet.pred <- predict(BC.nnet,BC.df,type="class")
+table(BC.nnet.pred,BC.df$Class)
+```
+
+
+Decision trees
+
+```{r }
+BC.tree <- rpart(Class ~ ., BC.df)
+rpart.plot(BC.tree, type=3, digits = 3, fallen.leaves = TRUE)
+BC.tree.pred <- predict(BC.tree,BC.df,type="class")
+table(BC.tree.pred,BC.df$Class)
+```
+
+
+Leave-1-Out Cross Validation (LOOCV)
+
+```{r }
+ans <- numeric(length(BC.df[,1]))
+for (i in 1:length(BC.df[,1])) {
+  mytree <- rpart(Class ~ ., BC.df[-i,])
+  mytree.pred <- predict(mytree,BC.df[i,],type="class")
+  ans[i] <- mytree.pred
+}
+ans <- factor(ans,labels=levels(BC.df$Class))
+table(ans,BC.df$Class)
+```
+
+
+Quadratic Discriminant Analysis
+
+```{r }
+BC.qda <- qda(Class ~ ., BC.df)
+BC.qda.pred <- predict(BC.qda, BC.df)
+table(BC.qda.pred$class,BC.df$Class)
+```
+
+
+Regularised Discriminant Analysis
+
+```{r }
+BC.rda <- rda(Class ~ ., BC.df)
+BC.rda.pred <- predict(BC.rda, BC.df)
+table(BC.rda.pred$class,BC.df$Class)
+```
+
+
+Random Forests
+
+```{r }
+BC.rf <- randomForest(Class ~ .,BC.df)
+BC.rf.pred <- predict(BC.rf, BC.df)
+table(BC.rf.pred, BC.df$Class)
+```
+
+Creating the Ensemble
+
+```{r}
+combine.classes<-data.frame(BC.rf.pred, BC.rda.pred$class,BC.qda.pred,
+BC.tree.pred,BC.nnet.pred,BC.svm.pred, BC.nb.pred$class)
+#head(combine.classes)
+#head(BC.rf.pred)
+#head(BC.rda.pred)
+combine.classes$BC.rf.pred<-ifelse(combine.classes$BC.rf.pred=="benign", 0, 1)
+combine.classes[,2]<-ifelse(combine.classes[,2]=="benign", 0, 1)
+combine.classes[,3]<-ifelse(combine.classes[,3]=="benign", 0, 1)
+combine.classes[,4]<-ifelse(combine.classes[,4]=="benign", 0, 1)
+combine.classes[,5]<-ifelse(combine.classes[,5]=="benign", 0, 1)
+combine.classes[,6]<-ifelse(combine.classes[,6]=="benign", 0, 1)
+
+#str(combine.classes)
+combine.classes$BC.nnet.pred <- as.numeric(combine.classes$BC.nnet.pred)
+combine.classes$BC.svm.pred <- as.numeric(combine.classes$BC.svm.pred)
+combine.classes$BC.nb.pred.class <- as.numeric(combine.classes$BC.nb.pred.class)
+
+majority.vote = rowSums(combine.classes)
+#head(majority.vote)
+
+combine.classes[,7]<-rowSums(combine.classes)
+combine.classes[,8]<-ifelse(combine.classes[,7]>=4, "malignant", "benign")
+table(combine.classes[,8], BreastCancer$Class)
+```
+
+
